@@ -72,6 +72,9 @@ import java.net.URI
 private const val TAG = "AGAddMcpServerDialog"
 private val APPROVED_MCP_HOSTS = listOf("googleapis.com")
 
+/** URL scheme used for MCP servers exposed through an Android ContentProvider. */
+private const val CONTENT_SCHEME = "content://"
+
 /** A dialog composable for adding a new MCP server by entering its URL. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,6 +96,10 @@ fun AddMcpServerFromUrlDialog(
   var dropdownExpanded by remember { mutableStateOf(false) }
   var headerName by remember { mutableStateOf(TextFieldValue("")) }
   var headerValue by remember { mutableStateOf(TextFieldValue("")) }
+
+  // MCP servers exposed through a ContentProvider use the `content://` scheme and exchange
+  // JSON-RPC messages synchronously, so HTTP authorization headers do not apply.
+  val isContentProviderUrl = textFieldValue.text.trim().startsWith(CONTENT_SCHEME)
 
   val safeDismiss: () -> Unit = {
     mcpManagerViewModel.clearError()
@@ -149,6 +156,11 @@ fun AddMcpServerFromUrlDialog(
               textFieldValue = newValue
               if (newValue.text != oldText) {
                 mcpManagerViewModel.clearError()
+                if (newValue.text.trim().startsWith(CONTENT_SCHEME)) {
+                  authType = McpAuth.AuthMethodCase.NONE
+                  headerName = TextFieldValue("")
+                  headerValue = TextFieldValue("")
+                }
               }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -179,63 +191,66 @@ fun AddMcpServerFromUrlDialog(
           }
         }
 
-        // Authorization section
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          // Authorization selector.
-          Text(
-            stringResource(R.string.mcp_server_authorization),
-            style = MaterialTheme.typography.labelMedium,
-          )
-          ExposedDropdownMenuBox(
-            expanded = dropdownExpanded,
-            onExpandedChange = { dropdownExpanded = !dropdownExpanded },
-          ) {
-            OutlinedTextField(
-              value =
-                when (authType) {
-                  McpAuth.AuthMethodCase.NONE -> stringResource(R.string.mcp_server_auth_none)
-                  McpAuth.AuthMethodCase.REQUEST_HEADER ->
-                    stringResource(R.string.mcp_server_auth_request_header)
-                  McpAuth.AuthMethodCase.OAUTH -> stringResource(R.string.mcp_server_auth_oauth_wip)
-                  else -> stringResource(R.string.mcp_server_auth_none)
-                },
-              onValueChange = {},
-              readOnly = true,
-              modifier =
-                Modifier.menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryEditable)
-                  .fillMaxWidth(),
-              textStyle = MaterialTheme.typography.bodySmall,
-              trailingIcon = {
-                ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
-              },
-              colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+        // Authorization section (HTTP only; ContentProvider URLs use no authorization headers).
+        if (!isContentProviderUrl) {
+          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Authorization selector.
+            Text(
+              stringResource(R.string.mcp_server_authorization),
+              style = MaterialTheme.typography.labelMedium,
             )
-            ExposedDropdownMenu(
+            ExposedDropdownMenuBox(
               expanded = dropdownExpanded,
-              onDismissRequest = { dropdownExpanded = false },
+              onExpandedChange = { dropdownExpanded = !dropdownExpanded },
             ) {
-              DropdownMenuItem(
-                text = { Text(stringResource(R.string.mcp_server_auth_none)) },
-                onClick = {
-                  authType = McpAuth.AuthMethodCase.NONE
-                  dropdownExpanded = false
+              OutlinedTextField(
+                value =
+                  when (authType) {
+                    McpAuth.AuthMethodCase.NONE -> stringResource(R.string.mcp_server_auth_none)
+                    McpAuth.AuthMethodCase.REQUEST_HEADER ->
+                      stringResource(R.string.mcp_server_auth_request_header)
+                    McpAuth.AuthMethodCase.OAUTH ->
+                      stringResource(R.string.mcp_server_auth_oauth_wip)
+                    else -> stringResource(R.string.mcp_server_auth_none)
+                  },
+                onValueChange = {},
+                readOnly = true,
+                modifier =
+                  Modifier.menuAnchor(type = ExposedDropdownMenuAnchorType.PrimaryEditable)
+                    .fillMaxWidth(),
+                textStyle = MaterialTheme.typography.bodySmall,
+                trailingIcon = {
+                  ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded)
                 },
+                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
               )
-              DropdownMenuItem(
-                text = { Text(stringResource(R.string.mcp_server_auth_request_header)) },
-                onClick = {
-                  authType = McpAuth.AuthMethodCase.REQUEST_HEADER
-                  dropdownExpanded = false
-                },
-              )
-              DropdownMenuItem(
-                text = { Text(stringResource(R.string.mcp_server_auth_oauth_wip)) },
-                onClick = {
-                  authType = McpAuth.AuthMethodCase.OAUTH
-                  dropdownExpanded = false
-                },
-                enabled = false,
-              )
+              ExposedDropdownMenu(
+                expanded = dropdownExpanded,
+                onDismissRequest = { dropdownExpanded = false },
+              ) {
+                DropdownMenuItem(
+                  text = { Text(stringResource(R.string.mcp_server_auth_none)) },
+                  onClick = {
+                    authType = McpAuth.AuthMethodCase.NONE
+                    dropdownExpanded = false
+                  },
+                )
+                DropdownMenuItem(
+                  text = { Text(stringResource(R.string.mcp_server_auth_request_header)) },
+                  onClick = {
+                    authType = McpAuth.AuthMethodCase.REQUEST_HEADER
+                    dropdownExpanded = false
+                  },
+                )
+                DropdownMenuItem(
+                  text = { Text(stringResource(R.string.mcp_server_auth_oauth_wip)) },
+                  onClick = {
+                    authType = McpAuth.AuthMethodCase.OAUTH
+                    dropdownExpanded = false
+                  },
+                  enabled = false,
+                )
+              }
             }
           }
         }
@@ -363,6 +378,11 @@ fun AddMcpServerFromUrlDialog(
 }
 
 private fun isMcpHostApproved(url: String): Boolean {
+  // ContentProvider URLs address an on-device provider by authority, not a remote host, so the
+  // host allowlist does not apply.
+  if (url.startsWith(CONTENT_SCHEME)) {
+    return true
+  }
   return try {
     val uri = URI(url).normalize()
     val parsedHost = uri.host?.lowercase() ?: return false

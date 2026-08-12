@@ -58,7 +58,16 @@ class RunMcpTool(
         }
 
       if (serverState == null) {
-        Log.w(TAG, "MCP server or tool not found for: $toolName")
+        Log.w(
+          TAG,
+          "MCP server or tool not found for: $toolName. " +
+            "provider=${System.identityHashCode(mcpServersProvider)} " +
+            "servers=[" +
+            mcpServersProvider.mcpServers.joinToString { s ->
+              "${s.mcpServer.url}(tools=${s.mcpServer.toolsList.map { it.name }},enabled=${s.mcpServer.enabled},error=${s.error})"
+            } +
+            "]",
+        )
         logMcpExecution(success = false, errorType = "tool_not_found")
         return@runBlocking guardMissingEntityWithSkillFallback(name = toolName, type = "Tool")
       }

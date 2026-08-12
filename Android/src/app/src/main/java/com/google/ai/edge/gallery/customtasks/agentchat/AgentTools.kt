@@ -18,6 +18,8 @@ package com.google.ai.edge.gallery.customtasks.agentchat
 
 import android.content.Context
 import com.google.ai.edge.gallery.data.DataStoreRepository
+import com.google.ai.edge.gallery.mcp.McpServerState
+import com.google.ai.edge.gallery.mcp.McpServersProvider
 import com.google.ai.edge.gallery.skills.SkillsProvider
 import com.google.ai.edge.gallery.tools.CallJsSkillResultImage
 import com.google.ai.edge.gallery.tools.CallJsSkillResultWebview
@@ -64,8 +66,14 @@ open class AgentToolsImpl : AgentTools {
   val loadSkillTool by lazy { LoadSkillTool(skillsProvider = skillsProvider) }
 
   val runMcpTool by lazy {
+    // AgentTools is a singleton while McpManagerViewModel is scoped to the Agent Chat screen, so
+    // the provider must delegate to the current ViewModel instead of capturing a stale instance.
     RunMcpTool(
-      mcpServersProvider = mcpManagerViewModel,
+      mcpServersProvider =
+        object : McpServersProvider {
+          override val mcpServers: List<McpServerState>
+            get() = mcpManagerViewModel.mcpServers
+        },
       skillsProvider = skillsProvider,
       taskId = taskId,
     )

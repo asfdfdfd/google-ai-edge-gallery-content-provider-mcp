@@ -16,6 +16,8 @@
 
 package com.google.ai.edge.gallery.customtasks.agentchat
 
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.datastore.core.DataStore
@@ -24,6 +26,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.ai.edge.gallery.BuildConfig
 import com.google.ai.edge.gallery.GalleryEvent
 import com.google.ai.edge.gallery.firebaseAnalytics
+import com.google.ai.edge.gallery.mcp.ContentProviderTransport
 import com.google.ai.edge.gallery.mcp.McpServerState
 import com.google.ai.edge.gallery.mcp.McpServersProvider
 import com.google.ai.edge.gallery.proto.McpAuth
@@ -32,6 +35,7 @@ import com.google.ai.edge.gallery.proto.McpServers
 import com.google.ai.edge.gallery.proto.McpTool
 import com.google.ai.edge.gallery.proto.UserData
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android
 import io.ktor.client.plugins.sse.SSE
@@ -50,6 +54,9 @@ import kotlinx.coroutines.withContext
 
 private const val TAG = "AGMcpManagerVM"
 
+/** URL scheme used for MCP servers exposed through an Android ContentProvider. */
+private const val CONTENT_SCHEME = "content://"
+
 data class McpManagerUiState(
   val mcpServers: List<McpServerState> = emptyList(),
   val loadingMcpServer: Boolean = false,
@@ -60,6 +67,7 @@ data class McpManagerUiState(
 class McpManagerViewModel
 @Inject
 constructor(
+  @ApplicationContext private val context: Context,
   private val mcpServersDataStore: DataStore<McpServers>,
   private val userDataDataStore: DataStore<UserData>,
 ) : ViewModel(), McpServersProvider {
@@ -408,10 +416,18 @@ constructor(
         clientInfo =
           Implementation(name = "google-ai-edge-gallery", version = BuildConfig.VERSION_NAME)
       )
-    // Retrieve authentication details from parameter or DataStore and configure the HTTP transport.
+    // Retrieve authentication details from parameter or DataStore and configure the transport.
+    // MCP servers exposed through a ContentProvider use the `content://` scheme and exchange
+    // JSON-RPC messages synchronously, so the HTTP transport and request headers do not apply.
+    val isContentProviderUrl = url.startsWith(CONTENT_SCHEME)
     val resolvedAuth = mcpAuth ?: userDataDataStore.data.first().mcpAuthsMap[url]
     val transport =
-      if (
+      if (isContentProviderUrl) {
+        ContentProviderTransport(
+          context = context,
+          uri = Uri.parse(url),
+        )
+      } else if (
         resolvedAuth != null && resolvedAuth.authMethodCase == McpAuth.AuthMethodCase.REQUEST_HEADER
       ) {
         val reqHeader = resolvedAuth.requestHeader

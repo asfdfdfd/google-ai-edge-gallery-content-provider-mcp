@@ -24,6 +24,22 @@
         android:compileSdkVersion ="37"
         android:targetSdkVersion="37" />
 
+    <!--
+      MCP servers exposed through a ContentProvider use the content:// scheme. Android's
+      package visibility rules (API 30+) hide other apps' providers unless the caller declares
+      the authority in <queries>. Declare the demo provider explicitly, and additionally declare
+      a discovery intent: any app that exports a component with the MCP_PROVIDER action becomes
+      visible to the gallery, which then allows connecting to its providers without listing the
+      authority here.
+    -->
+    <queries>
+        <provider android:authorities="com.example.mcpserverdemo.mcp" />
+        <intent>
+            <action android:name="com.google.ai.edge.gallery.action.MCP_PROVIDER" />
+            <category android:name="android.intent.category.DEFAULT" />
+        </intent>
+    </queries>
+
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
